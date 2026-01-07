@@ -1,7 +1,7 @@
 from typing import Tuple
 
 from game.common import MOVE_RESPONSE, PIECE_TYPE, ChessPiece, Move, get_index, add_tuples, get_coords
-from game.setup import get_starting_board
+from game.setup import get_starting_board, get_piece_square_tables
 
 UP, DOWN, LEFT, RIGHT = (-1, 0), (1, 0), (0, -1), (0, 1)
 UR, DR, DL, UL        = (-1, 1), (1, 1), (1, -1), (-1, -1)
@@ -18,8 +18,12 @@ class ChessBoard:
         self.winner: int | None = None
         
         self.tiles: list[ChessPiece | None] = get_starting_board(self.PLAYER_1, self.PLAYER_2)
+        self.piece_square_tables: dict[Tuple[PIECE_TYPE, int], list[int]] = get_piece_square_tables()
 
         self.moves_list: list[Move] = []
+
+        self.total_mat_score = self.get_material_score(self.PLAYER_1)
+        self.total_position_score = len(self.get_player_pieces(self.PLAYER_1)) * 50
 
     
     def get_player_pieces(self, player: int) -> list[Tuple[int, int]]:
@@ -558,6 +562,18 @@ class ChessBoard:
         return total
 
 
+    def get_position_score(self, player: int) -> int:
+        value = 0
+
+        for pos in self.get_player_pieces(player):
+            success, piece = self.get_piece(pos)
+            index = get_index(pos)
+
+            if success and piece and index:
+                value += self.piece_square_tables[(piece.piece_type, player)][index]
+    
+        return value
+
     def get_score(self, current_depth: int) -> float:
         if self.check_for_checkmate(self.current_player):
             return -1000.0 + current_depth if self.current_player == 1 else 1000.0 - current_depth
@@ -565,12 +581,15 @@ class ChessBoard:
         if self.check_for_stalemate(self.current_player):
             return 0.0
 
-        p1_mat = self.get_material_score(1)
-        p2_mat = self.get_material_score(2)
+        mat_score = float(self.get_material_score(self.PLAYER_1) - self.get_material_score(self.PLAYER_2)) / self.total_mat_score
+        position_score = float(self.get_position_score(self.PLAYER_1) - self.get_position_score(self.PLAYER_2)) / self.total_position_score
+        check_score = 0.0
+
+        if self.check_for_check(self.PLAYER_1): check_score -= 1
+        if self.check_for_check(self.PLAYER_2): check_score += 1
         
-        score = float(p1_mat - p2_mat)
-        
-        if self.check_for_check(self.PLAYER_1): score -= 30
-        if self.check_for_check(self.PLAYER_2): score += 30
-        
-        return score
+        mat_weight: float = 0.6
+        position_weight: float = 0.2
+        check_weight: float = 0.2
+
+        return (mat_score * mat_weight) + (position_score * position_weight) + (check_score * check_weight)

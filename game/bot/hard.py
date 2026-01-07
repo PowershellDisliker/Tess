@@ -1,76 +1,60 @@
 from game.chessboard import ChessBoard
-from game.bot.common import get_pieces_to_moves
 from game.common import Move
-
-from concurrent.futures import ProcessPoolExecutor
-from copy import deepcopy
+from game.bot.common import get_pieces_to_moves
 
 
 def hard_bot_input(board: ChessBoard, max_depth: int) -> Move:
     pieces_to_move = get_pieces_to_moves(board, board.current_player)
+    all_moves = [m for moves in pieces_to_move.values() for m in moves]
+    
+    if not all_moves:
+        raise ValueError("No Moves Given")
 
-    tasks = []
-    for moves in pieces_to_move.values():
-        for move in moves:
-            new_board = deepcopy(board)
-            new_board.make_move(move)
-            tasks.append((move, new_board))
-
-    if not tasks:
-        raise ValueError("No moves available")
-
-    results = []
-    with ProcessPoolExecutor() as executor:
-        future_to_move = {
-            executor.submit(hard_bot_internal, b, max_depth, 1, -float('inf'), float('inf')): m 
-            for m, b in tasks
-        }
+    best_move = all_moves[0]
+    best_eval = -float("inf")
+    
+    alpha = -float("inf")
+    beta = float("inf")
+    color = 1 if board.current_player == board.PLAYER_1 else -1
+    
+    for move in all_moves:
+        board.make_move(move)
+        eval_score = -hard_bot_internal(board, max_depth - 1, -beta, -alpha, -color)
+        board.undo_move()
         
-        for future in future_to_move:
-            move = future_to_move[future]
-            score = future.result()
-            results.append((score, move))
+        if eval_score > best_eval:
+            best_eval = eval_score
+            best_move = move
 
-    if board.current_player == board.PLAYER_1:
-        best_score, best_move = max(results, key=lambda x: x[0])
-    else:
-        best_score, best_move = min(results, key=lambda x: x[0])
-
+        alpha = max(alpha, eval_score)
+        
     return best_move
 
-def hard_bot_internal(board: ChessBoard, max_depth: int, current_depth: int, alpha: float, beta: float) -> float:
-    if board.winner is not None or current_depth == max_depth:
-        return board.get_score(current_depth)
+def hard_bot_internal(board: ChessBoard, depth: int, alpha: float, beta: float, color: int) -> float:
+    """
+    Standard Negamax with Alpha-Beta Pruning.
+    'color' is 1 for PLAYER_1 and -1 for PLAYER_2.
+    """
+    if board.winner is not None or depth == 0:
+        # Return score relative to the current player
+        return color * board.get_score(depth)
 
-    moving_player = board.current_player
-    pieces_to_moves = get_pieces_to_moves(board, moving_player)
-    
+    pieces_to_moves = get_pieces_to_moves(board, board.current_player)
     if not pieces_to_moves:
-        return board.get_score(current_depth)
+        return color * board.get_score(depth)
 
-    if moving_player == board.PLAYER_1:
-        max_eval = -float('inf')
-        for piece, moves in pieces_to_moves.items():
-            for move in moves:
-                board.make_move(move)
-                eval_score = hard_bot_internal(board, max_depth, current_depth + 1, alpha, beta)
-                board.undo_move()
+    max_eval = -float('inf')
+    
+    for moves in pieces_to_moves.values():
+        for move in moves:
+            board.make_move(move)
+            eval_score = -hard_bot_internal(board, depth - 1, -beta, -alpha, -color)
+            board.undo_move()
+            
+            max_eval = max(max_eval, eval_score)
+            alpha = max(alpha, eval_score)
+            
+            if alpha >= beta:
+                return alpha  # Snip the branch
                 
-                max_eval = max(max_eval, eval_score)
-                alpha = max(alpha, eval_score)
-                if beta <= alpha:
-                    return max_eval
-        return max_eval
-    else:
-        min_eval = float('inf')
-        for piece, moves in pieces_to_moves.items():
-            for move in moves:
-                board.make_move(move)
-                eval_score = hard_bot_internal(board, max_depth, current_depth + 1, alpha, beta)
-                board.undo_move()
-                
-                min_eval = min(min_eval, eval_score)
-                beta = min(beta, eval_score)
-                if beta <= alpha:
-                    return min_eval
-        return min_eval
+    return max_eval

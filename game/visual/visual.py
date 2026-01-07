@@ -20,7 +20,7 @@ def terminal_interface_loop(board: ChessBoard, player_types: list[PLAYER_TYPES])
                 board.make_move(easy_bot_input(board))
 
             case PLAYER_TYPES.HARD_BOT:
-                board.make_move(hard_bot_input(board, 5))
+                board.make_move(hard_bot_input(board, 4))
 
     print_board(board)
     print(f"{"White" if board.winner == 1 else "Green"} won in {board.get_turn_number()} moves.")
